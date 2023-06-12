@@ -22,6 +22,7 @@ from sgqlc.endpoint.requests import RequestsEndpoint  # noqa: I900
 # @app.callback()
 def main(repo: str):
     token = os.getenv("GH_TOKEN")
+    token = "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"
 
     if not token:
         print("GH_TOKEN environment variable must be set")

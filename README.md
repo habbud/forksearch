@@ -22,17 +22,19 @@ $ source venv/bin/activate
 $ make install
 ```
 
-## Take your CLI for a spin
+## Take forksearch for a spin
 
-This Cookiecutter comes with two generic CLI commands, namely, `init` and `hello`.
+First, you need to create a Github access token. You'll need repo and email permissions.
 
-```bash
-$ forksearch init
-```
+Then,
 
 ```bash
-$ forksearch show
+$ export GH_TOKEN=<GH_TOKEN>
+$ cd forksearch
+$ python main.py dbrumley/calculator
 ```
+
+NOTE: Installation isn't working. To be fixed :)
 
 ### Test with Docker
 
@@ -40,7 +42,7 @@ CLI commands can be tested with Docker.
 
 1. Build an image for the CLI.
 
-    Image is tagged with the same name as the `cli_command`.
+   Image is tagged with the same name as the `cli_command`.
 
 ```bash
 $ make docker-image
