@@ -1,0 +1,36 @@
+version: '3.1'
+
+services:
+  neo4j:
+    image: neo4j:5.9.0-enterprise
+    restart: always
+    ports:
+      - 7474:7474 # HTTP
+      - 7687:7687 # BOLT
+    volumes:
+      - ./neo4j/conf:/conf
+      - ./neo4j/data:/data
+      - ./neo4j/import:/import
+      - ./neo4j/logs:/logs
+    environment:
+      - NEO4J_ACCEPT_LICENSE_AGREEMENT=yes
+      - NEO4J_AUTH=neo4j/password
+      - NEO4J_apoc_export_file_enabled=true
+      - NEO4J_apoc_import_file_enabled=true
+      - NEO4J_apoc_import_file_use__neo4j__config=true
+      - NEO4J_PLUGINS=["apoc"]
+    networks:
+      neo4j-net:
+        aliases:
+          - neo4j
+
+  # forksearch:
+  #   image: python:3.11.0-slim
+  #   depends_on:
+  #     - neo4j
+  #   volumes:
+  #     - ./:/app
+  #   command: bash -c "python setup.py develop && python main.py"
+
+networks:
+  neo4j-net:
