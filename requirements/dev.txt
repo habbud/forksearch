@@ -29,6 +29,7 @@ mkdocs-markdownextradata-plugin==0.2.5
 mkdocs-material==9.1.15
 mkdocs-material-extensions==1.1.1
 mypy-extensions==1.0.0
+neo4j-driver==5.9.0
 nodeenv==1.8.0
 packaging==23.1
 pathspec==0.11.1
