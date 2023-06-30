@@ -1,52 +1,55 @@
-"""
-Entrypoint for CLI.
-"""
-import typer
-from typing_extensions import Annotated
+import argparse
 import os
-import sys
-import gh_utils
 import utils
 from rich import print
+from database import GitDB
 from sgqlc.endpoint.requests import RequestsEndpoint  # noqa: I900
 
-gh_token = os.getenv("GH_TOKEN")
-if not gh_token:
-    print("GH_TOKEN environment variable must be set")
-    sys.exit(-1)
+def init_parser():
+    parser = argparse.ArgumentParser(description="ForkSearch CLI")
+    parser.add_argument("--token", help="Github token (default token with environment variable GH_TOKEN)", default=os.getenv("GH_TOKEN"))
+    parser.add_argument("--host", help="Neo4j host", default="localhost")
+    parser.add_argument("--port", help="Neo4j port", default=7687)
+    parser.add_argument("--username", help="Neo4j username", default="neo4j")
+    parser.add_argument("--password", help="Neo4j password", default="password")
+    parser.add_argument("--repo", help="owner/repo", default="dbrumley/forksearch")
+    parser.add_argument("-f", "--file", help="file containing list of owner/repo", default=None)
+    parser.add_argument("-q", "--quiet", action="store_true", help="quiet output", default=False)
+    parser.add_argument("-y", "--yes", action="store_true", help="assume yes", default=False)
+    parser.add_argument("-r", "--recursive", action="store_true", help="recursive search", default=False)
+    args = parser.parse_args()
+    return args
 
-endpoint = RequestsEndpoint(
-    "https://api.github.com/graphql",
-    {
-        "Authorization": "bearer " + gh_token,
-    },
-    timeout=600.0,
-)
+def quiet_info(*args, **kwargs):
+    pass
 
-app = typer.Typer(no_args_is_help=True)
+if __name__ == '__main__':
+    args = init_parser()
 
-@app.command()
-def check():
-    return "check"
+    if args.token is None:
+        print("GH_TOKEN environment variable must be set")
+        exit(-1)
 
-# query repositories
-@app.command()
-def repositories(
-    repo: Annotated[str, "owner/repo"] = typer.Argument(..., help="owner/repo"),
-):
-    owner, repo = repo.split("/")
+    endpoint = RequestsEndpoint(
+        "https://api.github.com/graphql",
+        {
+            "Authorization": "bearer " + args.token,
+        },
+        timeout=600.0,
+    )
 
-    # query repositories list
-    gh_utils.query_repo_list(endpoint, [(owner, repo)])
+    db = GitDB(args.host, args.port, args.username, args.password)
 
-@app.command()
-def request(
-    owner: Annotated[str, "owner name"] = typer.Option(prompt="Owner Name: "),
-    repo: Annotated[str, "repository name"] = typer.Option(prompt="Repository Name: ")
-):  # noqa: E501
-    # initialize database
-    db = utils.init_db()
-    utils.request_repo(endpoint, db, owner, repo)
+    if args.file is not None:
+        # read file
+        with open(args.file, 'r') as f:
+            repos = [repo.strip() for repo in f.readlines()]
+    else:
+        repos = [args.repo]
 
-if __name__ == "__main__":
-    app()
+    for repo in repos:
+        print (f'Processing [italic blue]{repo}[/italic blue]')
+        owner, repo = repo.split("/")
+        utils.request_repo(endpoint, db, owner, repo, quiet_info if args.quiet else utils.print_info, args.recursive, args.yes)
+
+    db.close()

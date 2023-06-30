@@ -1,3 +1,4 @@
+from types import FunctionType
 from database import GitDB
 from gh_utils import *
 from rich import print, table
@@ -12,7 +13,6 @@ def init_db():
     return GitDB(HOST, BOLTPORT, USERNAME, PASSWORD)
 
 def print_info(gh_info, db_info, owner, repo):
-    # print if repo is fork
     if gh_info['isFork']:
         caption = f"Fork from [bold red]{gh_info['parent']['nameWithOwner']}[/bold red]"
     else:
@@ -51,16 +51,12 @@ def print_info(gh_info, db_info, owner, repo):
     print ()
 
 def query_info(endpoint: RequestsEndpoint, db: GitDB, owner: str, name: str):
-    # get repo info from github
     gh_info = query_repo_info(endpoint, owner=owner, name=name)
 
-    # get repo properties
     needed_field = ['isFork', 'id', 'url', 'name']
     repo_properties = {k: gh_info[k] for k in needed_field}
 
-    # get repo counts from database
     db_info = db.get_repo_info(name=name, login=owner, owner=gh_info['owner'], repo_properties=repo_properties)
-    print (db_info)
 
     return gh_info, db_info
 
@@ -91,16 +87,13 @@ def query_all(endpoint: RequestsEndpoint, db: GitDB, owner: str, name: str, db_i
         select_watchers(r, after=cursors['watchers'])
         select_forks(r, after=cursors['forks'])
         select_stargazers(r, after=cursors['stargazers'])
-        print (r)
 
         p = query_with_retry(endpoint, op)
 
         data = p['data'][camel_case(name)]
 
         # add all edged in database
-        print (data, name, owner)
         result = db.add_all_edges(data, name, owner)
-        print (f"Added {result} edges to database")
 
         # get all length of nodes
         watchers_len = len(data['watchers']['nodes'])
@@ -117,48 +110,32 @@ def query_all(endpoint: RequestsEndpoint, db: GitDB, owner: str, name: str, db_i
             or data['forks']['pageInfo']['hasNextPage'] \
             or data['stargazers']['pageInfo']['hasNextPage']
 
-        # print all length and cursors
-
-        # update corresponding cursors when nodes is not empty
         if watchers_len > 0:
             cursors['watchers'] = data['watchers']['pageInfo']['endCursor']
         if forks_len > 0:
             cursors['forks'] = data['forks']['pageInfo']['endCursor']
         if stargazers_len > 0:
             cursors['stargazers'] = data['stargazers']['pageInfo']['endCursor']
-    
-    print ('Done!\n')
 
-def request_repo(endpoint: RequestsEndpoint, db: GitDB, owner: str, name: str):
-    # query information
+def request_repo(endpoint: RequestsEndpoint, db: GitDB, owner: str, name: str, info: FunctionType = print_info, is_recursive: bool = False, do_request: bool = False):
     gh_info, db_info = query_info(endpoint = endpoint, db = db, owner = owner, name = name)
 
-    # print repo info
-    print_info(gh_info, db_info, owner, name)
+    info(gh_info, db_info, owner, name)
 
-    # check if repo is fork
     if gh_info['isFork']:
-        # if repo is fork, ask if user want to request parent repo
-        if Confirm("Do you want to request parent repo?"):
-            # get parent repo info
+        if is_recursive:
+            parent_owner, parent_name = gh_info['parent']['nameWithOwner'].split('/')
+            request_repo(endpoint, db, parent_owner, parent_name, info, is_recursive, do_request)
+            info(gh_info, db_info, owner, name)
+
+        elif Confirm("Do you want to request parent repo?"):
             parent_owner, parent_name = gh_info['parent']['nameWithOwner'].split('/')
 
-            # request repo for parent repo
-            request_repo(endpoint, db, parent_owner, parent_name)
+            request_repo(endpoint, db, parent_owner, parent_name, info, is_recursive, do_request)
+            info(gh_info, db_info, owner, name)
 
-            # print out the current repo info again
-            print_info(gh_info, db_info, owner, name)
-
-    # check if query all data
-    if Confirm("Do you want to query all data?"):
-        # query all data
+    if do_request or Confirm("Do you want to query all data?"):
         query_all(endpoint, db, owner, name, db_info)
 
-    # query information again
     gh_info, db_info = query_info(endpoint = endpoint, db = db, owner = owner, name = name)
-    
-    # print repo info again
-    print_info(gh_info, db_info, owner, name)
-
-    # close database
-    db.close()
+    info(gh_info, db_info, owner, name)

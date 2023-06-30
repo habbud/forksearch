@@ -276,17 +276,14 @@ def query_with_retry(endpoint, op, max_retries=2):
     op.rate_limit()
     for _ in range(max_retries):
         d = endpoint(op, timeout=600.0)
-        print (d)
         errors = d.get("errors")
         if errors:
             query_error_handler(errors)
         elif "data" in d and "rateLimit" in d["data"]:
-            print ('hit rate limit')
             sleep_off_graphql_rate_limit(d["data"]["rateLimit"])
             d["data"].pop("rateLimit")
             return d
         else:
-            print (d)
             return d
         print ("Retrying...")
         print (f"Errors: {errors}")
@@ -303,7 +300,6 @@ def query_repos(repos, endpoint):
     d = query_with_retry(endpoint, op)
 
     repos = op + d
-    print (repos)
 
     # Create a work list of repos that have a next page
     next_pages = repos_with_next_page(repos)
@@ -458,7 +454,6 @@ def query_repo_info(endpoint: RequestsEndpoint, name: str, owner: str):
         fork_count=True,
         stargazer_count=True,
     )
-    print (r)
 
     # set up fields for owner
     u = r.owner.__as__(schema.User)
