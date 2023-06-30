@@ -39,30 +39,30 @@ CREATE_REPOSITORY = f'''
 return repo.id as id
 '''
 
-add_edges = lambda edge: f'''
-WITH $nodes as batch
-MATCH (repo:{REPOSITORY} {{name: $name}})<-[:{OWN}]-(:{OWNER} {{login: $login}})
-SET repo.{edge.lower()}_cursor = $nodes.pageInfo.endCursor
-WITH repo, batch
-UNWIND batch.nodes AS user
-call apoc.merge.node(["{OWNER}", user.__typename], {{login: user.login}}, user, user) yield node as watcher
-MERGE (repo) <-[:{edge}]- (watcher)
-return watcher.login
-'''
+# add_edges = lambda edge: f'''
+# WITH $nodes as batch
+# MATCH (repo:{REPOSITORY} {{name: $name}})<-[:{OWN}]-(:{OWNER} {{login: $login}})
+# SET repo.{edge.lower()}_cursor = $nodes.pageInfo.endCursor
+# WITH repo, batch
+# UNWIND batch.nodes AS user
+# call apoc.merge.node(["{OWNER}", user.__typename], {{login: user.login}}, user, user) yield node as watcher
+# MERGE (repo) <-[:{edge}]- (watcher)
+# return watcher.login
+# '''
 
-ADD_FORKS = f'''
-WITH $forks as batch
-MATCH (parent_repo:{REPOSITORY} {{name: $name}})<-[:{OWN}]-(:{OWNER} {{login: $login}})
-SET parent_repo.fork_cursor = $forks.pageInfo.endCursor
-WITH parent_repo, batch
-UNWIND batch.nodes as fork
-call apoc.merge.node(["{OWNER}", fork.owner.__typename], {{login: fork.owner.login}}, fork.owner, fork.owner) yield node as owner
-MERGE (repo:{REPOSITORY} {{name: fork.name}})<-[:{OWN}]-(owner)
-SET repo += {{isFork: fork.isFork, id: fork.id, url: fork.url}}
-MERGE (repo)<-[:{OWN}]-(owner)
-MERGE (parent_repo)<-[:{FORK}]-(repo)
-return owner.name, repo.name
-'''
+# ADD_FORKS = f'''
+# WITH $forks as batch
+# MATCH (parent_repo:{REPOSITORY} {{name: $name}})<-[:{OWN}]-(:{OWNER} {{login: $login}})
+# SET parent_repo.fork_cursor = $forks.pageInfo.endCursor
+# WITH parent_repo, batch
+# UNWIND batch.nodes as fork
+# call apoc.merge.node(["{OWNER}", fork.owner.__typename], {{login: fork.owner.login}}, fork.owner, fork.owner) yield node as owner
+# MERGE (repo:{REPOSITORY} {{name: fork.name}})<-[:{OWN}]-(owner)
+# SET repo += {{isFork: fork.isFork, id: fork.id, url: fork.url}}
+# MERGE (repo)<-[:{OWN}]-(owner)
+# MERGE (parent_repo)<-[:{FORK}]-(repo)
+# return owner.name, repo.name
+# '''
 
 ADD_ALL_EDGES = f'''
 WITH $nodes as batch
@@ -94,11 +94,8 @@ UNION all
     WITH parent, forks
     UNWIND forks as fork
     call apoc.merge.node(["{OWNER}", fork.owner.__typename], {{login: fork.owner.login}}, fork.owner, fork.owner) yield node as owner
-    MERGE (repo:{REPOSITORY} {{name: fork.name}})<-[:{OWN}]-(owner)
-    ON CREATE
-        SET repo += {{isFork: fork.isFork, id: fork.id, url: fork.url}}
-    ON MATCH
-        SET repo += {{isFork: fork.isFork, id: fork.id, url: fork.url}}
+    MERGE (repo:{REPOSITORY} {{id: fork.id}})<-[:{OWN}]-(owner)
+    SET repo += {{ isFork: fork.isFork, name: fork.name, url: fork.url }}
     MERGE (repo)<-[:{OWN}]-(owner)
     MERGE (parent)<-[:{FORK}]-(repo)
     return owner.login as result
@@ -107,10 +104,10 @@ return result
 '''
 
 # read nodes/relationships
-GET_FORK_COUNT = f'''
-MATCH (:{OWNER} {{login: $login}})-[:{OWN}]->(:{REPOSITORY} {{name: $name}})<-[:{FORK}*]-(fork:{REPOSITORY})
-return count(fork) as count
-'''
+# GET_FORK_COUNT = f'''
+# MATCH (:{OWNER} {{login: $login}})-[:{OWN}]->(:{REPOSITORY} {{name: $name}})<-[:{FORK}*]-(fork:{REPOSITORY})
+# return count(fork) as count
+# '''
 GET_COUNTS = f'''
 {CREATE_REPOSITORY_WITHOUT_RET}
 return COUNT {{ (repo)<-[:{STAR}]-() }} as stargazers,
