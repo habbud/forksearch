@@ -22,7 +22,12 @@ class GitDB:
 
         # create uniqueness constraints
         ## indexes created when constraints are created
-        self._write(lambda tx: tx.run(CREATE_OWNER_UNIQUENESS).data())
+        print ("Creating uniqueness constraints...")
+        def uniquenesses(tx):
+            tx.run(CREATE_OWNER_UNIQUENESS)
+            tx.run(CREATE_REPO_UNIQUENESS)
+
+        self._write(uniquenesses)
 
     def close(self) -> None:
         self.driver.close()
@@ -61,23 +66,21 @@ class GitDB:
 
         return result
 
-    def add_all_edges(self, nodes, name, login):
+    def add_all_edges(self, nodes):
         result = self._write(
             lambda tx: tx.run(
                 ADD_ALL_EDGES,
                 nodes = nodes,
-                name = name,
-                login = login,
             ).data()
         )
 
         return result
 
-    def get_repo_info(self, name, login, owner, repo_properties):
+    def get_repo_info(self, id, login, owner, repo_properties):
         result = self._write(
             lambda tx: tx.run(
                 GET_COUNTS,
-                name = name,
+                id = id,
                 login = login,
                 label = owner['__typename'],
                 properties = {'login': owner['login']},

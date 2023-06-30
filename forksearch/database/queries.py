@@ -24,21 +24,19 @@ ON (n.{property})
 '''
 
 CREATE_OWNER_UNIQUENESS = create_unique_constraint('owner_uniqueness', OWNER, 'login')
+CREATE_REPO_UNIQUENESS = create_unique_constraint('repo_uniqueness', REPOSITORY, 'id')
 DROP_OWNER_UNIQUENESS = drop_constraint('owner_uniqueness')
 
 # note: insert nodes
 CREATE_OWNER = f'call apoc.merge.node(["{OWNER}", $label], $properties, $on_create, $on_merge) yield node as owner'
 CREATE_REPOSITORY_WITHOUT_RET = f'''
 {CREATE_OWNER}
-MERGE (repo:{REPOSITORY} {{name: $name}})<-[:{OWN}]-(owner)
-ON CREATE
-    SET repo += $repo_properties
-ON MATCH
-    SET repo += $repo_properties
+MERGE (repo:{REPOSITORY} {{id: $id}})<-[:{OWN}]-(owner)
+SET repo += $repo_properties
 '''
 CREATE_REPOSITORY = f'''
 {CREATE_REPOSITORY_WITHOUT_RET}
-return owner.login as owner, repo.name as repo
+return repo.id as id
 '''
 
 add_edges = lambda edge: f'''
@@ -60,10 +58,7 @@ WITH parent_repo, batch
 UNWIND batch.nodes as fork
 call apoc.merge.node(["{OWNER}", fork.owner.__typename], {{login: fork.owner.login}}, fork.owner, fork.owner) yield node as owner
 MERGE (repo:{REPOSITORY} {{name: fork.name}})<-[:{OWN}]-(owner)
-ON CREATE
-    SET repo += {{isFork: fork.isFork, id: fork.id, url: fork.url}}
-ON MATCH
-    SET repo += {{isFork: fork.isFork, id: fork.id, url: fork.url}}
+SET repo += {{isFork: fork.isFork, id: fork.id, url: fork.url}}
 MERGE (repo)<-[:{OWN}]-(owner)
 MERGE (parent_repo)<-[:{FORK}]-(repo)
 return owner.name, repo.name
@@ -71,7 +66,7 @@ return owner.name, repo.name
 
 ADD_ALL_EDGES = f'''
 WITH $nodes as batch
-MATCH (parent:{REPOSITORY} {{name: $name}})<-[:{OWN}]-(:{OWNER} {{login: $login}})
+MATCH (parent:{REPOSITORY} {{id: $nodes.id}})
 WITH $nodes.stargazers.pageInfo.endCursor as starCursor,
     $nodes.watchers.pageInfo.endCursor as watchCursor,
     $nodes.forks.pageInfo.endCursor as forkCursor,

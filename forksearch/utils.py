@@ -23,27 +23,27 @@ def print_info(gh_info, db_info, owner, repo):
     t.add_column("", justify="right", style="cyan", no_wrap=True)
     t.add_column("Database", justify="right", no_wrap=True)
     t.add_column("Github", justify="right", no_wrap=True)
-    t.add_column("Percentage", justify="right", no_wrap=True)
+    t.add_column("Percentage (%)", justify="right", no_wrap=True)
 
     t.add_row(
         "Watchers",
         str(db_info['watchers']),
         str(gh_info['watchers']['totalCount']),
-        f"{db_info['watchers']/gh_info['watchers']['totalCount']:0.2f}" if gh_info['watchers']['totalCount'] else "N/A",
+        f"{db_info['watchers']/gh_info['watchers']['totalCount'] * 100:.1f}" if gh_info['watchers']['totalCount'] else "N/A",
         style="cyan"
     )
     t.add_row(
         "Forks",
         str(db_info['forks']),
         str(gh_info['forkCount']),
-        f"{db_info['forks']/gh_info['forkCount']:0.2f}" if gh_info['forkCount'] else "N/A",
+        f"{db_info['forks']/gh_info['forkCount'] * 100:.1f}" if gh_info['forkCount'] else "N/A",
         style="green"
     )
     t.add_row(
         "Stargazers",
         str(db_info['stargazers']),
         str(gh_info['stargazerCount']),
-        f"{db_info['stargazers']/gh_info['stargazerCount']:0.2f}" if gh_info['stargazerCount'] else "N/A",
+        f"{db_info['stargazers']/gh_info['stargazerCount'] * 100:.1f}" if gh_info['stargazerCount'] else "N/A",
         style="magenta"
     )
 
@@ -53,14 +53,16 @@ def print_info(gh_info, db_info, owner, repo):
 def query_info(endpoint: RequestsEndpoint, db: GitDB, owner: str, name: str):
     gh_info = query_repo_info(endpoint, owner=owner, name=name)
 
-    needed_field = ['isFork', 'id', 'url', 'name']
+    needed_field = ['isFork', 'url', 'name']
     repo_properties = {k: gh_info[k] for k in needed_field}
 
-    db_info = db.get_repo_info(name=name, login=owner, owner=gh_info['owner'], repo_properties=repo_properties)
+    db_info = db.get_repo_info(id=gh_info['id'], login=owner, owner=gh_info['owner'], repo_properties=repo_properties)
 
     return gh_info, db_info
 
-def query_all(endpoint: RequestsEndpoint, db: GitDB, owner: str, name: str, db_info: dict):
+def query_all(endpoint: RequestsEndpoint, db: GitDB, owner: str, name: str, db_info: dict, id: str):
+    print (f"Querying all watchers, forks, and stargazers for [italic blue]{owner}/{name}[/italic blue]...")
+
     has_next_page = True
 
     # initialize watchers/forks/stargazers counts
@@ -78,9 +80,6 @@ def query_all(endpoint: RequestsEndpoint, db: GitDB, owner: str, name: str, db_i
     }
 
     while has_next_page:
-        # print count of watchers/forks/stargazers
-        print(f"Watchers: {counts['watchers']}, Forks: {counts['forks']}, Stargazers: {counts['stargazers']}")
-
         op = Operation(schema.Query)
         r = op.repository(owner=owner, name=name, __alias__=camel_case(name))
         r.__fields__(id=True)
@@ -93,7 +92,7 @@ def query_all(endpoint: RequestsEndpoint, db: GitDB, owner: str, name: str, db_i
         data = p['data'][camel_case(name)]
 
         # add all edged in database
-        result = db.add_all_edges(data, name, owner)
+        result = db.add_all_edges(data)
 
         # get all length of nodes
         watchers_len = len(data['watchers']['nodes'])
@@ -104,6 +103,9 @@ def query_all(endpoint: RequestsEndpoint, db: GitDB, owner: str, name: str, db_i
         counts['watchers'] += watchers_len
         counts['forks'] += forks_len
         counts['stargazers'] += stargazers_len
+
+        # print count of watchers/forks/stargazers
+        print(f"Watchers: {counts['watchers']}, Forks: {counts['forks']}, Stargazers: {counts['stargazers']} ({len(result)} edges added)")
 
         # update has_next_page if any of the page has next page
         has_next_page = data['watchers']['pageInfo']['hasNextPage'] \
@@ -135,7 +137,7 @@ def request_repo(endpoint: RequestsEndpoint, db: GitDB, owner: str, name: str, i
             info(gh_info, db_info, owner, name)
 
     if do_request or Confirm("Do you want to query all data?"):
-        query_all(endpoint, db, owner, name, db_info)
+        query_all(endpoint, db, owner, name, db_info, gh_info['id'])
 
     gh_info, db_info = query_info(endpoint = endpoint, db = db, owner = owner, name = name)
     info(gh_info, db_info, owner, name)

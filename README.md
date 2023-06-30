@@ -1,5 +1,25 @@
 ## forksearch
 
+```
+> python main.py -h
+usage: main.py [-h] [--token TOKEN] [--host HOST] [--port PORT] [--username USERNAME] [--password PASSWORD] [-f FILE] [-r REPO] [-q] [-y] [-t]
+
+ForkSearch CLI
+
+options:
+  -h, --help            show this help message and exit
+  --token TOKEN         Github token (Default token with environment variable GH_TOKEN)
+  --host HOST           Neo4j host
+  --port PORT           Neo4j port
+  --username USERNAME   Neo4j username
+  --password PASSWORD   Neo4j password
+  -f FILE, --file FILE  file containing list of owner/repo
+  -r REPO, --repo REPO  owner/repo (Default: dbrumley/forksearch)
+  -q, --quiet           Not printing repo information
+  -y, --yes             Yes to all confirmation
+  -t, --trace           Trace back to the parent repository
+```
+
 ## Usage
 
 1. `cd` into project directory.
