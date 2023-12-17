@@ -152,7 +152,7 @@ def select_forks(repo, first=100, after=None):
     conn = repo.forks(**args)
     conn.__fields__(total_count=True, __typename__=True)
     conn.page_info.__fields__(has_next_page=True, end_cursor=True)
-    conn.nodes.__fields__(url=True, __typename__=True, is_fork=True, name=True, id=True)
+    conn.nodes.__fields__(url=True, __typename__=True, is_fork=True, name=True, id=True, pushed_at=True)
     # conn.nodes.owner.__fields__(__typename__="Organization")
     set_owner_fields(conn.nodes.owner)
 
@@ -310,7 +310,7 @@ def query_error_handler(errors):
 
 
 def query_with_retry(endpoint, op, max_retries=2, wait_for_ratelimiter=False):
-    print("Querying...")
+    # print("Querying...")
     op.rate_limit()
     for _ in range(max_retries):
         d = endpoint(op, timeout=600.0)
@@ -495,7 +495,7 @@ def chunks(list_a, chunk_size):
         yield list_a[i : i + chunk_size]
 
 
-def query_repo_info(endpoint: RequestsEndpoint, name: str, owner: str):
+def query_repo_info(endpoint: RequestsEndpoint, name: str, owner: str, wait_for_ratelimiter: bool = False):
     op = Operation(schema.Query)
     r = op.repository(name=name, owner=owner, __alias__=camel_case(name))
     # get info about the repo
@@ -519,15 +519,15 @@ def query_repo_info(endpoint: RequestsEndpoint, name: str, owner: str):
     # get count of watchers
     r.watchers.__fields__(total_count=True)
     r.parent.__fields__(name_with_owner=True)
-
+    d= query_with_retry(endpoint, op, wait_for_ratelimiter=wait_for_ratelimiter)
     # get response of query
-    d = endpoint(op)
-    errors = d.get("errors")
-    if errors:
-        report_download_errors(errors)
-        sys.exit(1)
-    else:
-        return d['data'][camel_case(name)]
+    # d = endpoint(op)
+    # errors = d.get("errors")
+    # if errors:
+    #     report_download_errors(errors)
+    #     sys.exit(1)
+    # else:
+    return d['data'][camel_case(name)]
     
 def query_repo_language(endpoint: RequestsEndpoint, name: str, owner: str):
     op = Operation(schema.Query)
@@ -578,26 +578,29 @@ def get_repos_by_owner(endpoint: RequestsEndpoint, owner:str, wait_for_ratelimit
         r.__fields__(id=True)
         r.repositories(first=100)
         p = query_with_retry(endpoint, op, wait_for_ratelimiter=wait_for_ratelimiter)
-        print("DEBUG habbud get_repos_by_owner")
+        # print("DEBUG habbud get_repos_by_owner")
         names=[]
         for entry in p['data']['repositoryOwner']['repositories']['nodes']:
             names.append(entry['name'])
-        print(names)
+        # print(names)
         
         return names
 
 def query_org_repos(endpoint:RequestsEndpoint, lib_name:str, repos_names:List[str], organization_login:str,  wait_for_ratelimiter: bool = False, headers: List[str] = []):
+    vulnerable_repos=set()
     for name in repos_names:
         # name="whisper"
         # organization_login="openai"
-        print("DEBUG habbud query_org_repos: name={}".format(name))
+        # print("DEBUG habbud query_org_repos: name={}".format(name))
+        if (name.lower() == lib_name.lower()):
+            continue
         try: 
             languages = query_repo_language(endpoint, name, organization_login)
         except:
             continue
         if len(languages)==0:
             continue
-        print("DEBUG habbud query_org_repos: languages={}".format(languages))
+        # print("DEBUG habbud query_org_repos: languages={}".format(languages))
         # if languages[0] != "Python" and (len(languages)==1 or languages[1]!="Python"):
             # continue
         # REST_endpoint.setopt(REST_endpoint.URL, 'https://www.google.com')
@@ -614,11 +617,14 @@ def query_org_repos(endpoint:RequestsEndpoint, lib_name:str, repos_names:List[st
         except:
             continue
         for dependency in SBOM['packages']:
-            print("DEBUG habbud query_org_repos: dependency={}".format(dependency['SPDXID']))
-            if lib_name.lower() in dependency['SPDXID'].lower() and name.lower() not in dependency['SPDXID'].lower(): 
-                print("DEBUG habbud query_org_repos: FOUND {}".format(lib_name))
-                exit(0)
-                return True
+            # print("DEBUG habbud query_org_repos: dependency={}".format(dependency['SPDXID']))
+            if lib_name.lower() in dependency['SPDXID'].lower() : 
+                print("The following repository {} for organization {} is using the given lib and it is unpatched ".format(lib_name, organization_login))
+                name_with_owner = organization_login + '/' + name
+                vulnerable_repos.add(name_with_owner)
+                # exit(0)
+                break
+    return vulnerable_repos
 
         # FIXME: HABBUD add if languages contains some of the wanted languages
 #         curl -L \
@@ -627,8 +633,8 @@ def query_org_repos(endpoint:RequestsEndpoint, lib_name:str, repos_names:List[st
 #   -H "X-GitHub-Api-Version: 2022-11-28" \
 #   https://api.github.com/repos/OWNER/REPO/dependency-graph/sbom
         # repo_object = REST_endpoint.get_repo(organization_login + '/' + name)
-        print("HEREEEEEEE DEBUG habbud query_org_repos: response={}".format(response))
-        print("DEBUG habbud query_org_repos: languages={}".format(languages))
+        # print("HEREEEEEEE DEBUG habbud query_org_repos: response={}".format(response))
+        # print("DEBUG habbud query_org_repos: languages={}".format(languages))
         # exit(0)
         # TBD: run SBOM on the organization
     

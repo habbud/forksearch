@@ -95,7 +95,7 @@ UNION all
     UNWIND forks as fork
     call apoc.merge.node(["{OWNER}", fork.owner.__typename], {{login: fork.owner.login}}, fork.owner, fork.owner) yield node as owner
     MERGE (repo:{REPOSITORY} {{id: fork.id}})<-[:{OWN}]-(owner)
-    SET repo += {{ isFork: fork.isFork, name: fork.name, url: fork.url, login: fork.owner.login, patch_date: fork.patch_date }}
+    SET repo += {{ isFork: fork.isFork, name: fork.name, url: fork.url, login: fork.owner.login, patch_date: fork.patch_date, pushedAt: fork.pushedAt}}
     MERGE (repo)<-[:{OWN}]-(owner)
     MERGE (parent)<-[:{FORK}]-(repo)
     return owner.login as result
@@ -126,7 +126,10 @@ MATCH (organizations:{REPOSITORY})-[r:{FORK}]->(repo:{REPOSITORY} {{id: $id}}) R
 
 
 GET_FORKS = f'''
-MATCH (forks:{REPOSITORY})-[r:{FORK}]->(repo:{REPOSITORY} {{id: $id}}) RETURN forks as fork
+MATCH (forks:{REPOSITORY})-[r:{FORK}]->(repo:{REPOSITORY} {{id: $id}}) RETURN forks as fork, forks.login as login
+'''
+GET_ORGS_FORKS = f'''
+MATCH (o:{ORGANIZATION})-[:{OWN}]->(forks:{REPOSITORY})-[r:{FORK}]->(repo:{REPOSITORY} {{id: $id}}) RETURN forks as fork, o.login as org_login
 '''
 
 DELETE_REPO = f'''

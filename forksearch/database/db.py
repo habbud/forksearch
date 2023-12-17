@@ -138,6 +138,18 @@ class GitDB:
         # # check if result is empty
         # print("DEBUG: result is" + str(result))
         return result
+    def get_orgs_forks_info(self, id,limit=1000):
+        result = self._write(
+            lambda tx: tx.run(
+                GET_ORGS_FORKS,
+                id = id,
+                limit=limit
+            ).data()
+        )
+
+        # # check if result is empty
+        # print("DEBUG: result is" + str(result))
+        return result
     
     def delete_repo_info(self, owner, name):
         result = self._write(

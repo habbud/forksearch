@@ -51,14 +51,14 @@ def print_info(gh_info, db_info, owner, repo):
     print (t)
     print ()
 
-def query_info(endpoint: RequestsEndpoint, db: GitDB, owner: str, name: str):
-    gh_info = query_repo_info(endpoint, owner=owner, name=name)
-    print("DEBUG HABBUD: gh_info={}".format(gh_info))
+def query_info(endpoint: RequestsEndpoint, db: GitDB, owner: str, name: str, wait_for_ratelimiter: bool = False):
+    gh_info = query_repo_info(endpoint, owner=owner, name=name, wait_for_ratelimiter=wait_for_ratelimiter)
+    # print("DEBUG HABBUD: gh_info={}".format(gh_info))
     needed_field = ['isFork', 'url', 'name', 'pushedAt']
     repo_properties = {k: gh_info[k] for k in needed_field}
 
     db_info = db.get_repo_info(id=gh_info['id'], login=owner, owner=gh_info['owner'], repo_properties=repo_properties)
-
+    # print("DEBUG HABBUD: db_info={}".format(db_info))
     return gh_info, db_info
 
 def get_unique_orgs(orgs_repos, organizations_number):
@@ -68,35 +68,39 @@ def get_unique_orgs(orgs_repos, organizations_number):
             orgs.append(orgs_repos[i]['organizations']['name'])
         if(len(orgs) == organizations_number):
             break
-    print("DEBUG HABBUD: orgs={}".format(orgs))
+    # print("DEBUG HABBUD: orgs={}".format(orgs))
     return orgs
 
 def query_organizations(endpoint: RequestsEndpoint, db: GitDB, owner: str, name: str, db_info: dict, gh_info,  
-                        organizations_number: int, wait_for_ratelimiter: bool = False, REST_endpoint: RequestsEndpoint = None):
-    print (f"Querying top {organizations_number} fork organizations for [italic blue]{owner}/{name}[/italic blue]...")
-    orgs_repos = db.get_organizations_info(id=gh_info['id'], limit=organizations_number)
-    print("DEBUG HABBUD: orgs_repos={}".format(orgs_repos))
-    orgs_logins=[]
-    for repo in orgs_repos:
-        orgs_logins.append(repo['org']['login'])
-    print("DEBUG HABBUD: organizations={}".format(orgs_logins))
-
+                        orgs_logins, wait_for_ratelimiter: bool = False, REST_endpoint: RequestsEndpoint = None):
+    # print (f"Querying top {organizations_number} fork organizations for [italic blue]{owner}/{name}[/italic blue]...")
+    # orgs_repos = db.get_organizations_info(id=gh_info['id'], limit=organizations_number)
+    # print("DEBUG HABBUD: orgs_repos={}".format(unpatched_orgs_forks))
+    # orgs_logins=[]
+    # for repo in orgs_repos:
+    #     orgs_logins.append(repo['org']['login'])
+    # print("DEBUG HABBUD: organizations={}".format(orgs_logins))
+    all_libs=set()
     for organization_login in orgs_logins:
         # add rate limiter handling HABBUD
-        print("DEBUG HABBUD: organization={}".format(organization_login))
+        print("Querying organization: {}".format(organization_login))
         repos_names= get_repos_by_owner(endpoint, organization_login, wait_for_ratelimiter)
         libs=query_org_repos(endpoint, lib_name=name, repos_names=repos_names, organization_login=organization_login, 
                              wait_for_ratelimiter=wait_for_ratelimiter, headers=REST_endpoint)
+        if libs != None:
+            all_libs.union(libs)
         # exit(0)
         # TBD: run SBOM on the organization
+    print("Found {} libraries in the organization, The Repos: ".format(len(all_libs), all_libs))
 
 def query_unpatched_orgs(endpoint, db, id, patch_date):
      forks_repos = db.get_forks_info(id)    
+     orgs_forks_repos = db.get_orgs_forks_info(id)    
      if(len(forks_repos) == 0):
          print("Local DataBase seems to be empty, please query the repo first.")
          exit(0)
          
-     print("DEBUG HABBUD: forks_repos={}".format(forks_repos))
+    #  print("DEBUG HABBUD: forks_repos={}".format(forks_repos))
      unpatched_forks=set()
      for repo in forks_repos:
          fork_name= repo['fork']['name']
@@ -104,12 +108,31 @@ def query_unpatched_orgs(endpoint, db, id, patch_date):
          fork_patch_date= repo['fork']['patch_date']
 
          if(fork_patch_date=='None'):
-             unpatched_forks.add(fork_owner+fork_name)
+             name_with_owner=fork_owner+'/'+fork_name
+             unpatched_forks.add(name_with_owner)
              continue
         #  fork_merged_date = datetime.datetime.strptime(fork_patch_date, '%Y-%m-%dT%H:%M:%SZ')
          if(patch_date>fork_patch_date):
              unpatched_forks.add(fork_owner+fork_name)  
-     return unpatched_forks
+     unpatched_orgs_forks=set()
+     unpatched_orgs_logins=set()
+     if(len(orgs_forks_repos) != 0):
+         for repo in orgs_forks_repos:
+            fork_name= repo['fork']['name']
+            fork_owner= repo['fork']['login']
+            fork_patch_date= repo['fork']['patch_date']
+            if(fork_patch_date=='None'):
+                unpatched_orgs_forks.add(fork_owner+fork_name)
+                unpatched_orgs_logins.add(repo['org_login'])
+                continue
+            #  fork_merged_date = datetime.datetime.strptime(fork_patch_date, '%Y-%m-%dT%H:%M:%SZ')
+            if(patch_date>fork_patch_date):
+                unpatched_orgs_forks.add(fork_owner+fork_name) 
+                unpatched_orgs_logins.add(repo['org_login']) 
+     print("Found {} unpatched forks out of {}, unpatched_forks={}".format(len(unpatched_forks),len(forks_repos), unpatched_forks))
+     print("Found {} unpatched organizations forks out of {}, unpatched_orgs_logins={}".format(len(unpatched_orgs_forks), len(orgs_forks_repos),unpatched_orgs_logins))
+         
+     return unpatched_orgs_logins
 
 # def check_repo_patch(endpoint, owner, name, parent_nameWithOwner, patch_date, wait_for_ratelimiter) :
 #      has_previous_page = True
@@ -151,7 +174,7 @@ def find_patch_date(endpoint, owner, name, parent_nameWithOwner, wait_for_rateli
      has_previous_page = True
      start_cursor = None
      date=None
-     print("DEBUG HABBUD: find_patch_date: owner={}, name={}, parent_nameWithOwner={}".format(owner, name, parent_nameWithOwner))
+    #  print("DEBUG HABBUD: find_patch_date: owner={}, name={}, parent_nameWithOwner={}".format(owner, name, parent_nameWithOwner))
      while has_previous_page:
         op = Operation(schema.Query)
         r = op.repository(owner=owner, name=name, __alias__=camel_case(name))
@@ -160,21 +183,21 @@ def find_patch_date(endpoint, owner, name, parent_nameWithOwner, wait_for_rateli
         select_pulls(r, last=100, before=start_cursor)
         p = query_with_retry(endpoint, op, wait_for_ratelimiter=wait_for_ratelimiter)
         data = p['data'][camel_case(name)]
-        print("DEBUG HABBUD query_patched_orgs: data={}".format(data['pullRequests']['nodes']))
+        # print("DEBUG HABBUD query_patched_orgs: data={}".format(data['pullRequests']['nodes']))
         has_previous_page = data['pullRequests']['pageInfo']['hasPreviousPage']
         start_cursor = data['pullRequests']['pageInfo']['startCursor']
-        print("DEBUG HABBUD query_patched_org: pageInfo={}".format(data['pullRequests']['pageInfo']))
+        # print("DEBUG HABBUD query_patched_org: pageInfo={}".format(data['pullRequests']['pageInfo']))
         for pull in data['pullRequests']['nodes']:
             if(pull['mergedAt'] != None and pull['headRepository'] != None):
                 merged_date = datetime.datetime.strptime(pull['mergedAt'], '%Y-%m-%dT%H:%M:%SZ')
                 pull_repo_nameWithOwner=pull['headRepository']['nameWithOwner']
                 # if(not pull_repo_name.contains(name)):
-                print("DEBUG HABBUD check_repo_patch: pull_repo_nameWithOwner={}, parent_nameWithOwner={}".format(pull_repo_nameWithOwner,parent_nameWithOwner))
+                # print("DEBUG HABBUD check_repo_patch: pull_repo_nameWithOwner={}, parent_nameWithOwner={}".format(pull_repo_nameWithOwner,parent_nameWithOwner))
                 #     exit(0)
                 if(pull_repo_nameWithOwner == parent_nameWithOwner):
                     date=merged_date
                     has_previous_page=False
-     print("DEBUG HABBUD query_patched_org: owner={}, repo={}, date={}".format(owner, name ,date))
+    #  print("DEBUG HABBUD query_patched_org: owner={}, repo={}, date={}".format(owner, name ,date))
      return date
         # exit(0)
         # if len(data['pullRequests']['nodes']) > 0:
@@ -212,6 +235,10 @@ def find_patch_date_by_CVE(endpoint, owner, name, cve_info, wait_for_ratelimiter
                 if(comment['updatedAt']<cve_year) :
                     has_previous_page=False
                     break
+                if("CVE".lower() in comment['bodyText'].lower()) :
+                    print("Debug: Habbud comment['bodyText']={}".format(comment['bodyText']))
+                    # print("Debug HABBUD comment['updatedAt']={}", comment['updatedAt'])
+                    # return comment['updatedAt']
                 if("CVE".lower() in comment['bodyText'].lower() and cve_number in comment['bodyText'].lower()) :
                     # print("Debug: Habbud commit['bodyText']={}".format(comment['bodyText']))
                     # print("Debug HABBUD commit['updatedAt']={}", comment['updatedAt'])
@@ -254,7 +281,7 @@ def query_all(endpoint: RequestsEndpoint, db: GitDB, owner: str, name: str, db_i
         for fork in data['forks']['nodes']:
             fork_owner=fork['owner']['login']
             fork_name=fork['name']
-            print("DEBUG HABBUD: fork_owner={}, fork_name={}".format(fork_owner, fork_name))
+            # print("DEBUG HABBUD: fork_owner={}, fork_name={}".format(fork_owner, fork_name))
             date=find_patch_date(endpoint, fork_owner, fork_name, repo_nameWithOwner, wait_for_ratelimiter)
             fork['patch_date']=str(date)
         # print("DEBUG HABBUD: data={}".format(data['forks']['nodes']))
@@ -268,7 +295,7 @@ def query_all(endpoint: RequestsEndpoint, db: GitDB, owner: str, name: str, db_i
 
         # get all length of nodes
         watchers_len = len(data['watchers']['nodes'])
-        print("DEBUG HABBUD: data['forks']['nodes']={}".format(data['forks']['nodes']))
+        # print("DEBUG HABBUD: data['forks']['nodes']={}".format(data['forks']['nodes']))
         forks_len = len(data['forks']['nodes'])
         stargazers_len = len(data['stargazers']['nodes'])
 
@@ -298,7 +325,7 @@ def request_repo(endpoint: RequestsEndpoint, db: GitDB, owner: str, name: str, i
     # print("DEBUG HABBUD: query_info with endpoint={}, db={}, owner={}, name={}".format(endpoint, db, owner, name))
     if(refresh) :
         db.delete_repo_info(owner, name)
-    gh_info, db_info = query_info(endpoint = endpoint, db = db, owner = owner, name = name)
+    gh_info, db_info = query_info(endpoint = endpoint, db = db, owner = owner, name = name, wait_for_ratelimiter=wait_for_ratelimiter)
 
     info(gh_info, db_info, owner, name)
 
@@ -327,32 +354,32 @@ def request_repo(endpoint: RequestsEndpoint, db: GitDB, owner: str, name: str, i
         
         
         split_date=patch_info.split('-') 
-        print("DEBUG HABBUD: split_date={}".format(split_date))
+        # print("DEBUG HABBUD: split_date={}".format(split_date))
         if(len(split_date) == 3 and split_date[0].isdigit() and split_date[1].isdigit() and split_date[2].isdigit()):
             patch_date=patch_info
         elif(patch_info.split('-')[0].lower() == 'CVE'.lower()):
-            print("DEBUG HABBUD: patch_info={}".format(patch_info))
+            # print("DEBUG HABBUD: patch_info={}".format(patch_info))
             #TODO: habbud support this flow 
             patch_date=find_patch_date_by_CVE(endpoint, owner, name, patch_info, wait_for_ratelimiter)
             if(patch_date == None):
                 print("Could not find a commit associated with the given CVE, please confirm the CVE number and try again.")
                 return
-        unpatched_forks=query_unpatched_orgs(endpoint, db, gh_info['id'], patch_date)
-        print("DEBUG HABBUD: unpatched_forks={}".format(unpatched_forks))
+            print("Found a commit associated with the given CVE, the commit date is {}".format(patch_date))
+        unpatched_orgs_forks=query_unpatched_orgs(endpoint, db, gh_info['id'], patch_date)
 
 
 
 
     if do_request or Confirm("Do you want to query potential vulnerable organizations?"):
-        organizations_number = input("Please enter the number of organization you want to query:")
+        # organizations_number = input("Please enter the number of organization you want to query:")
 
-        # Try to convert the user's input to an integer
-        try:
-            organizations_number = int(organizations_number)
-        except ValueError:
-            print("Invalid input. Please enter a valid integer.")
+        # # Try to convert the user's input to an integer
+        # try:
+        #     organizations_number = int(organizations_number)
+        # except ValueError:
+        #     print("Invalid input. Please enter a valid integer.")
 
-        if(organizations_number <=0) :
-            print("Invalid input. Please enter a valid positive integer.")
-        else:
-            query_organizations(endpoint, db, owner, name, db_info, gh_info, organizations_number, wait_for_ratelimiter, REST_endpoint)
+        # if(organizations_number <=0) :
+        #     print("Invalid input. Please enter a valid positive integer.")
+        # else:
+        query_organizations(endpoint, db, owner, name, db_info, gh_info, unpatched_orgs_forks, wait_for_ratelimiter, REST_endpoint)
