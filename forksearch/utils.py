@@ -54,7 +54,7 @@ def print_info(gh_info, db_info, owner, repo):
 def query_info(endpoint: RequestsEndpoint, db: GitDB, owner: str, name: str):
     gh_info = query_repo_info(endpoint, owner=owner, name=name)
     print("DEBUG HABBUD: gh_info={}".format(gh_info))
-    needed_field = ['isFork', 'url', 'name', 'x']
+    needed_field = ['isFork', 'url', 'name', 'pushedAt']
     repo_properties = {k: gh_info[k] for k in needed_field}
 
     db_info = db.get_repo_info(id=gh_info['id'], login=owner, owner=gh_info['owner'], repo_properties=repo_properties)
