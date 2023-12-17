@@ -4,6 +4,10 @@ import utils
 from rich import print
 from database import GitDB
 from sgqlc.endpoint.requests import RequestsEndpoint  # noqa: I900
+# from github import Github
+# from github import Auth
+import pycurl
+
 
 def init_parser():
     parser = argparse.ArgumentParser(description="ForkSearch CLI")
@@ -16,7 +20,9 @@ def init_parser():
     parser.add_argument("-r", "--repo", help="owner/repo (Default: dbrumley/forksearch)", default="dbrumley/forksearch")
     parser.add_argument("-q", "--quiet", action="store_true", help="Not printing repo information", default=False)
     parser.add_argument("-y", "--yes", action="store_true", help="Yes to all confirmation", default=False)
+    parser.add_argument("-w", "--wait", action="store_true", help="Wait for rate limiter instead of exiting", default=False)
     parser.add_argument("-t", "--trace", action="store_true", help="Trace back to the parent repository", default=False)
+    parser.add_argument("-ref", "--refresh", action="store_true", help="Refresh the data instead of using local DB info", default=False)
     args = parser.parse_args()
     return args
 
@@ -37,7 +43,16 @@ if __name__ == '__main__':
         },
         timeout=600.0,
     )
-
+    # REST_endpoint = RequestsEndpoint(
+    #     "https://api.github.com",
+    #     {
+    #         "Authorization": "bearer " + args.token,
+    #     },
+    #     timeout=600.0,
+    # )
+    # auth = Auth.Token(args.token)
+    # REST_endpoint = Github(auth=auth)
+    headers={'Accept': 'application/vnd.github+json', 'Authorization': 'Bearer {}'.format(args.token), 'X-GitHub-Api-Version': '2022-11-28'}
     db = GitDB(args.host, args.port, args.username, args.password)
 
     if args.file is not None:
@@ -49,6 +64,8 @@ if __name__ == '__main__':
     for repo in repos:
         print (f'Processing [italic blue]{repo}[/italic blue]')
         owner, repo = repo.split("/")
-        utils.request_repo(endpoint, db, owner, repo, quiet_info if args.quiet else utils.print_info, args.trace, args.yes)
+        utils.request_repo(endpoint, db, owner, repo, quiet_info if args.quiet else utils.print_info, args.trace, args.yes, args.wait, args.refresh, headers)
+    
+    # REST_endpoint.close()
 
     db.close()

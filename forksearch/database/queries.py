@@ -95,7 +95,7 @@ UNION all
     UNWIND forks as fork
     call apoc.merge.node(["{OWNER}", fork.owner.__typename], {{login: fork.owner.login}}, fork.owner, fork.owner) yield node as owner
     MERGE (repo:{REPOSITORY} {{id: fork.id}})<-[:{OWN}]-(owner)
-    SET repo += {{ isFork: fork.isFork, name: fork.name, url: fork.url }}
+    SET repo += {{ isFork: fork.isFork, name: fork.name, url: fork.url, login: fork.owner.login, patch_date: fork.patch_date }}
     MERGE (repo)<-[:{OWN}]-(owner)
     MERGE (parent)<-[:{FORK}]-(repo)
     return owner.login as result
@@ -117,4 +117,18 @@ return COUNT {{ (repo)<-[:{STAR}]-() }} as stargazers,
     repo.watcher_cursor as watcher_cursor,
     repo.fork_cursor as fork_cursor,
     repo.name as name
+'''
+
+
+GET_TOP_ORGANIZATIONS = f'''
+MATCH (organizations:{REPOSITORY})-[r:{FORK}]->(repo:{REPOSITORY} {{id: $id}}) RETURN organizations as org, COUNT  {{(organizations)<-[r2:{FORK}]-()}}  as forkcount ORDER BY forkcount DESC LIMIT $limit
+'''
+
+
+GET_FORKS = f'''
+MATCH (forks:{REPOSITORY})-[r:{FORK}]->(repo:{REPOSITORY} {{id: $id}}) RETURN forks as fork
+'''
+
+DELETE_REPO = f'''
+MATCH (downstream)-[edges*]->(r:{REPOSITORY} {{name: $name}})<-[:OWN]-(:{OWNER} {{login: $login}}) FOREACH (e in edges | DELETE e) DETACH DELETE downstream,r
 '''

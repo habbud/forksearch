@@ -10,11 +10,14 @@ from typing import List, Tuple
 from dateutil import parser
 from pathlib import Path
 from re import sub
+from typer import confirm as Confirm
 from sgqlc.operation import Operation  # noqa: I900
 from sgqlc.endpoint.requests import RequestsEndpoint  # noqa: I900
-from github import github_schema as schema  # noqa: I900
+from mygithub import github_schema as schema  # noqa: I900
 from sgqlc.types import Arg, String, Variable  # noqa: I900
 import xdg.BaseDirectory
+from time import sleep
+import requests
 
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger(__name__)
@@ -106,6 +109,39 @@ def set_parent_fields(n: schema.Repository):
     n.__fields__(url=True)
     set_owner_fields(n.owner)
 
+def select_comments(repo, last=100, before=None):
+    args = {}
+    args["last"] = last
+    if before:
+        args["before"] = before
+
+    conn = repo.issues(**args)
+    # repo.pull_requests.__fields__(__typename__=True)
+    conn.page_info.__fields__(has_previous_page=True, start_cursor=True)
+    #either that or body (habbud). either publishedAt or createdAt or updatedAt
+    comment_args={}
+    comment_args["last"] = 100
+    comment_args["before"] = None
+    comment_conn=conn.nodes.comments(**comment_args)
+    comment_conn.nodes.__fields__(body_text=True, updated_at=True)
+    comment_conn.page_info.__fields__(has_previous_page=True, start_cursor=True)
+    # __fields__(__typename__=True, body_text=True, published_at=True) 
+    # repository(, __alias__=camel_case(name))
+
+def select_pulls(repo, last=100, before=None):
+    args = {}
+    args["last"] = last
+    if before:
+        args["before"] = before
+
+    conn = repo.pull_requests(**args)
+    # repo.pull_requests.__fields__(__typename__=True)
+    conn.page_info.__fields__(has_previous_page=True, start_cursor=True)
+    conn.nodes.__fields__(__typename__=True, merged_at=True, merged=True)
+    conn.nodes.head_repository.__fields__(name_with_owner=True, __typename__=True, url=True)
+    # repository(, __alias__=camel_case(name))
+    # conn.nodes.owner.__fields__(__typename__="Organization")
+    # set_owner_fields(conn.nodes.owner)
 
 def select_forks(repo, first=100, after=None):
     args = {}
@@ -117,6 +153,7 @@ def select_forks(repo, first=100, after=None):
     conn.__fields__(total_count=True, __typename__=True)
     conn.page_info.__fields__(has_next_page=True, end_cursor=True)
     conn.nodes.__fields__(url=True, __typename__=True, is_fork=True, name=True, id=True)
+    # conn.nodes.owner.__fields__(__typename__="Organization")
     set_owner_fields(conn.nodes.owner)
 
 def select_stargazers(repo, first=100, after=None):
@@ -272,10 +309,13 @@ def query_error_handler(errors):
     report_download_errors(errors)
 
 
-def query_with_retry(endpoint, op, max_retries=2):
+def query_with_retry(endpoint, op, max_retries=2, wait_for_ratelimiter=False):
+    print("Querying...")
     op.rate_limit()
     for _ in range(max_retries):
         d = endpoint(op, timeout=600.0)
+        # print("DEBUGGGGGG D is:")
+        # print(d)
         errors = d.get("errors")
         if errors:
             query_error_handler(errors)
@@ -287,8 +327,21 @@ def query_with_retry(endpoint, op, max_retries=2):
             return d
         print ("Retrying...")
         print (f"Errors: {errors}")
-    print("Failed retrying. Exiting")
-    sys.exit(-2)
+    try:
+        retry_after=errors[0]['headers']['Retry-After']
+    except:
+        retry_after=120
+    print("Failed retrying, rate limiter hit. Retry wait time: {}".format(retry_after))
+    if wait_for_ratelimiter or Confirm("Do you want to wait for the rate limiter?"):
+        sleep_sec=int(retry_after)+2
+        log.warning(
+            f"Rate limit failure. Sleeping ({sleep_sec} seconds)"
+        )
+        sleep(sleep_sec)  # add 2 seconds for slop
+        return query_with_retry(endpoint, op, max_retries=max_retries, wait_for_ratelimiter=wait_for_ratelimiter)
+    else :
+        print("Exiting...")
+        sys.exit(-2)
 
 
 def query_repos(repos, endpoint):
@@ -453,7 +506,9 @@ def query_repo_info(endpoint: RequestsEndpoint, name: str, owner: str):
         name=True,
         fork_count=True,
         stargazer_count=True,
+        pushed_at=True,
     )
+
 
     # set up fields for owner
     u = r.owner.__as__(schema.User)
@@ -473,6 +528,36 @@ def query_repo_info(endpoint: RequestsEndpoint, name: str, owner: str):
         sys.exit(1)
     else:
         return d['data'][camel_case(name)]
+    
+def query_repo_language(endpoint: RequestsEndpoint, name: str, owner: str):
+    op = Operation(schema.Query)
+    r = op.repository(
+                name=name,
+                owner=owner,
+                __alias__=camel_case(name),
+            )
+    # get info about the repo
+    args = {}
+    args["first"] = 5
+    conn = r.languages(**args)
+
+    # set up fields for owner
+    u = r.owner.__as__(schema.User)
+    set_user_fields(u)
+    u = r.owner.__as__(schema.Organization)
+    set_org_fields(u)
+
+    # get response of query
+    d = endpoint(op)
+    errors = d.get("errors")
+    if errors:
+        report_download_errors(errors)
+        sys.exit(1)
+    else:
+        languages_names=[]
+        for language in d['data'][camel_case(name)]['languages']['nodes']:
+            languages_names.append(language['name'])
+        return languages_names
 
 def query_repo_list(endpoint: RequestsEndpoint, repositories: List[Tuple[str, str]]):
     repos = {}
@@ -485,3 +570,65 @@ def query_repo_list(endpoint: RequestsEndpoint, repositories: List[Tuple[str, st
             repos[k] = v
         cmd_save(repos)
         foo = cmd_load()
+
+def get_repos_by_owner(endpoint: RequestsEndpoint, owner:str, wait_for_ratelimiter: bool = False) :
+        op = Operation(schema.Query)
+        # print("DEBUG habbud get_repos_by_owner, op fields are:".format(op))
+        r = op.repository_owner(login=owner)
+        r.__fields__(id=True)
+        r.repositories(first=100)
+        p = query_with_retry(endpoint, op, wait_for_ratelimiter=wait_for_ratelimiter)
+        print("DEBUG habbud get_repos_by_owner")
+        names=[]
+        for entry in p['data']['repositoryOwner']['repositories']['nodes']:
+            names.append(entry['name'])
+        print(names)
+        
+        return names
+
+def query_org_repos(endpoint:RequestsEndpoint, lib_name:str, repos_names:List[str], organization_login:str,  wait_for_ratelimiter: bool = False, headers: List[str] = []):
+    for name in repos_names:
+        # name="whisper"
+        # organization_login="openai"
+        print("DEBUG habbud query_org_repos: name={}".format(name))
+        try: 
+            languages = query_repo_language(endpoint, name, organization_login)
+        except:
+            continue
+        if len(languages)==0:
+            continue
+        print("DEBUG habbud query_org_repos: languages={}".format(languages))
+        # if languages[0] != "Python" and (len(languages)==1 or languages[1]!="Python"):
+            # continue
+        # REST_endpoint.setopt(REST_endpoint.URL, 'https://www.google.com')
+        # repo_object= REST_endpoint.perform()
+        url="https://api.github.com/repos/{}/{}/dependency-graph/sbom".format(organization_login, name)
+        response = requests.get(
+            url,
+            headers=headers,
+        )
+        response = response.json()
+
+        try:
+            SBOM=response['sbom']
+        except:
+            continue
+        for dependency in SBOM['packages']:
+            print("DEBUG habbud query_org_repos: dependency={}".format(dependency['SPDXID']))
+            if lib_name.lower() in dependency['SPDXID'].lower() and name.lower() not in dependency['SPDXID'].lower(): 
+                print("DEBUG habbud query_org_repos: FOUND {}".format(lib_name))
+                exit(0)
+                return True
+
+        # FIXME: HABBUD add if languages contains some of the wanted languages
+#         curl -L \
+#   -H "Accept: application/vnd.github+json" \
+#   -H "Authorization: Bearer <YOUR-TOKEN>" \
+#   -H "X-GitHub-Api-Version: 2022-11-28" \
+#   https://api.github.com/repos/OWNER/REPO/dependency-graph/sbom
+        # repo_object = REST_endpoint.get_repo(organization_login + '/' + name)
+        print("HEREEEEEEE DEBUG habbud query_org_repos: response={}".format(response))
+        print("DEBUG habbud query_org_repos: languages={}".format(languages))
+        # exit(0)
+        # TBD: run SBOM on the organization
+    

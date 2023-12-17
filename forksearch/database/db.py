@@ -67,12 +67,28 @@ class GitDB:
         return result
 
     def add_all_edges(self, nodes):
+        # try:
+        # print(list(nodes))
+            # print(d)
         result = self._write(
-            lambda tx: tx.run(
-                ADD_ALL_EDGES,
-                nodes = nodes,
-            ).data()
+                lambda tx: tx.run(
+                    ADD_ALL_EDGES,
+                    nodes = nodes,
+                ).data()
         )
+        # for node in nodes:
+        #     print (node)
+        #     try:
+        #         result = self._write(
+        #             lambda tx: tx.run(
+        #                 ADD_ALL_EDGES,
+        #                 nodes = [node],
+        #             ).data()
+        #         )
+        #     except Exception as e:
+        #         print(e)
+        #         print("Error adding edges: Node: {},".format(node))
+        #         return None
 
         return result
 
@@ -94,3 +110,44 @@ class GitDB:
         if not result:
             return self.DEFAULT_REPO_INFO
         return result[0]
+    
+    def get_organizations_info(self, id, limit):
+        result = self._write(
+            lambda tx: tx.run(
+                GET_TOP_ORGANIZATIONS,
+                id = id,
+                limit = limit
+            ).data()
+        )
+
+        # # check if result is empty
+        # print("DEBUG: result is" + str(result))
+        if not result:
+            return self.DEFAULT_REPO_INFO
+        return result
+    
+    def get_forks_info(self, id,limit=1000):
+        result = self._write(
+            lambda tx: tx.run(
+                GET_FORKS,
+                id = id,
+                limit=limit
+            ).data()
+        )
+
+        # # check if result is empty
+        # print("DEBUG: result is" + str(result))
+        return result
+    
+    def delete_repo_info(self, owner, name):
+        result = self._write(
+            lambda tx: tx.run(
+                DELETE_REPO,
+                login = owner,
+                name = name
+            ).data()
+        )
+
+        # # check if result is empty
+        # print("DEBUG: result is" + str(result))
+        return result
