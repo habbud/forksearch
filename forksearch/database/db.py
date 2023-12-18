@@ -111,6 +111,14 @@ class GitDB:
             return self.DEFAULT_REPO_INFO
         return result[0]
     
+    def update_pushedAt(self, id, pushedAt):
+        self._write(
+            lambda tx: tx.run(
+                UPDATE_PUSHED_AT,
+                id = id,
+                pushedAt = pushedAt,
+            ).data()
+        )
     def get_organizations_info(self, id, limit):
         result = self._write(
             lambda tx: tx.run(

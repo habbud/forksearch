@@ -116,7 +116,8 @@ return COUNT {{ (repo)<-[:{STAR}]-() }} as stargazers,
     repo.stargazer_cursor as stargazer_cursor,
     repo.watcher_cursor as watcher_cursor,
     repo.fork_cursor as fork_cursor,
-    repo.name as name
+    repo.name as name,
+    repo.pushedAt as pushedAt
 '''
 
 
@@ -134,4 +135,9 @@ MATCH (o:{ORGANIZATION})-[:{OWN}]->(forks:{REPOSITORY})-[r:{FORK}]->(repo:{REPOS
 
 DELETE_REPO = f'''
 MATCH (downstream)-[edges*]->(r:{REPOSITORY} {{name: $name}})<-[:OWN]-(:{OWNER} {{login: $login}}) FOREACH (e in edges | DELETE e) DETACH DELETE downstream,r
+'''
+
+UPDATE_PUSHED_AT = f'''
+MATCH (repo:{REPOSITORY} {{id: $id}})
+SET repo.pushedAt = $pushedAt
 '''

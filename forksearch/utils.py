@@ -54,7 +54,7 @@ def print_info(gh_info, db_info, owner, repo):
 def query_info(endpoint: RequestsEndpoint, db: GitDB, owner: str, name: str, wait_for_ratelimiter: bool = False):
     gh_info = query_repo_info(endpoint, owner=owner, name=name, wait_for_ratelimiter=wait_for_ratelimiter)
     # print("DEBUG HABBUD: gh_info={}".format(gh_info))
-    needed_field = ['isFork', 'url', 'name', 'pushedAt']
+    needed_field = ['isFork', 'url', 'name']
     repo_properties = {k: gh_info[k] for k in needed_field}
 
     db_info = db.get_repo_info(id=gh_info['id'], login=owner, owner=gh_info['owner'], repo_properties=repo_properties)
@@ -72,7 +72,7 @@ def get_unique_orgs(orgs_repos, organizations_number):
     return orgs
 
 def query_organizations(endpoint: RequestsEndpoint, db: GitDB, owner: str, name: str, db_info: dict, gh_info,  
-                        orgs_logins, wait_for_ratelimiter: bool = False, REST_endpoint: RequestsEndpoint = None):
+                        orgs_logins, wait_for_ratelimiter: bool = False, REST_header: List[str] = []):
     # print (f"Querying top {organizations_number} fork organizations for [italic blue]{owner}/{name}[/italic blue]...")
     # orgs_repos = db.get_organizations_info(id=gh_info['id'], limit=organizations_number)
     # print("DEBUG HABBUD: orgs_repos={}".format(unpatched_orgs_forks))
@@ -86,7 +86,7 @@ def query_organizations(endpoint: RequestsEndpoint, db: GitDB, owner: str, name:
         print("Querying organization: {}".format(organization_login))
         repos_names= get_repos_by_owner(endpoint, organization_login, wait_for_ratelimiter)
         libs=query_org_repos(endpoint, lib_name=name, repos_names=repos_names, organization_login=organization_login, 
-                             wait_for_ratelimiter=wait_for_ratelimiter, headers=REST_endpoint)
+                             wait_for_ratelimiter=wait_for_ratelimiter, headers=REST_header)
         if libs != None:
             all_libs.union(libs)
         # exit(0)
@@ -245,7 +245,7 @@ def find_patch_date_by_CVE(endpoint, owner, name, cve_info, wait_for_ratelimiter
                     return comment['updatedAt']
     return None
 
-def query_all(endpoint: RequestsEndpoint, db: GitDB, owner: str, name: str, db_info: dict, id: str, wait_for_ratelimiter: bool = False):
+def query_all(endpoint: RequestsEndpoint, db: GitDB, owner: str, name: str, db_info: dict, id: str, wait_for_ratelimiter: bool = False, pushedAt: str = None):
     print (f"Querying all watchers, forks, and stargazers for [italic blue]{owner}/{name}[/italic blue]...")
 
     has_next_page = True
@@ -263,7 +263,8 @@ def query_all(endpoint: RequestsEndpoint, db: GitDB, owner: str, name: str, db_i
         'forks': db_info['fork_cursor'],
         'stargazers': db_info['stargazer_cursor'],
     }
-
+    if db_info['pushedAt'] == None:
+        db.update_pushedAt(id, pushedAt)
     while has_next_page:
         op = Operation(schema.Query)
         r = op.repository(owner=owner, name=name, __alias__=camel_case(name))
@@ -321,12 +322,12 @@ def query_all(endpoint: RequestsEndpoint, db: GitDB, owner: str, name: str, db_i
 
 def request_repo(endpoint: RequestsEndpoint, db: GitDB, owner: str, name: str, info: FunctionType = print_info, 
                  is_recursive: bool = False, do_request: bool = False, wait_for_ratelimiter: bool =False, refresh: bool = False, 
-                 REST_endpoint: RequestsEndpoint = None):
+                 REST_header: List[str] = []):
     # print("DEBUG HABBUD: query_info with endpoint={}, db={}, owner={}, name={}".format(endpoint, db, owner, name))
     if(refresh) :
         db.delete_repo_info(owner, name)
     gh_info, db_info = query_info(endpoint = endpoint, db = db, owner = owner, name = name, wait_for_ratelimiter=wait_for_ratelimiter)
-
+    print("DEBUG HABBUD: db_info={}".format(db_info))
     info(gh_info, db_info, owner, name)
 
     if gh_info['isFork']:
@@ -341,8 +342,8 @@ def request_repo(endpoint: RequestsEndpoint, db: GitDB, owner: str, name: str, i
             request_repo(endpoint, db, parent_owner, parent_name, info, is_recursive, do_request)
             info(gh_info, db_info, owner, name)
 
-    if do_request or Confirm("Do you want to query all data?"):
-        query_all(endpoint, db, owner, name, db_info, gh_info['id'], wait_for_ratelimiter)
+    if do_request or refresh or Confirm("Do you want to query all data?") :
+        query_all(endpoint, db, owner, name, db_info, gh_info['id'], wait_for_ratelimiter, gh_info['pushedAt'])
 
     gh_info, db_info = query_info(endpoint = endpoint, db = db, owner = owner, name = name)
     info(gh_info, db_info, owner, name)
@@ -382,4 +383,4 @@ def request_repo(endpoint: RequestsEndpoint, db: GitDB, owner: str, name: str, i
         # if(organizations_number <=0) :
         #     print("Invalid input. Please enter a valid positive integer.")
         # else:
-        query_organizations(endpoint, db, owner, name, db_info, gh_info, unpatched_orgs_forks, wait_for_ratelimiter, REST_endpoint)
+        query_organizations(endpoint, db, owner, name, db_info, gh_info, unpatched_orgs_forks, wait_for_ratelimiter, REST_header)

@@ -588,6 +588,17 @@ def get_repos_by_owner(endpoint: RequestsEndpoint, owner:str, wait_for_ratelimit
 
 def query_org_repos(endpoint:RequestsEndpoint, lib_name:str, repos_names:List[str], organization_login:str,  wait_for_ratelimiter: bool = False, headers: List[str] = []):
     vulnerable_repos=set()
+    url="https://api.github.com/search/code?q={}".format(lib_name)
+    print("DEBUG habbud query_org_repos: header={}".format(headers))
+    response = requests.request("GET", url, headers=headers)
+
+    # response = requests.get(
+    #     url,
+    #     headers=headers,
+    # )
+    response = response.json()
+    print("DEBUG habbud query_org_repos: response={}".format(response))
+    exit(0)
     for name in repos_names:
         # name="whisper"
         # organization_login="openai"

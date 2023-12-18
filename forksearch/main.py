@@ -52,7 +52,7 @@ if __name__ == '__main__':
     # )
     # auth = Auth.Token(args.token)
     # REST_endpoint = Github(auth=auth)
-    headers={'Accept': 'application/vnd.github+json', 'Authorization': 'Bearer {}'.format(args.token), 'X-GitHub-Api-Version': '2022-11-28'}
+    headers={'Authorization': '{}'.format(args.token)}
     db = GitDB(args.host, args.port, args.username, args.password)
 
     if args.file is not None:
