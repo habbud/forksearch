@@ -1,8 +1,9 @@
 FROM python:3.11-slim-buster
 
-COPY . /app
+COPY . /.
+COPY ./forksearch/. /.
 
-WORKDIR /app
+WORKDIR /.
 
 RUN python setup.py develop
 
