@@ -383,4 +383,27 @@ def request_repo(endpoint: RequestsEndpoint, db: GitDB, owner: str, name: str, i
         # if(organizations_number <=0) :
         #     print("Invalid input. Please enter a valid positive integer.")
         # else:
-        query_organizations(endpoint, db, owner, name, db_info, gh_info, unpatched_orgs_forks, wait_for_ratelimiter, REST_header)
+        page_number=1
+        orgs_in_code_search=set()
+        lines=set()
+        i=0
+        while True:
+            code_result=query_code_search(name,REST_header, page_number)
+            try:
+                code_result['items']
+            except:
+                break
+            for line in code_result["items"]:
+                i=i+1
+                for org in unpatched_orgs_forks:
+                    print("DEBUG HABBUD: org={}, line={}".format(org, line["repository"]["owner"]["login"]))
+                    if(org == line["repository"]["owner"]["login"]):
+                        print("Found a potential vulnerable organization: {}".format(org))
+                        orgs_in_code_search.add(org)
+                        lines.add(line["repository"])
+                        exit(0)
+            page_number=page_number+1
+        print("i={}".format(i))
+        print("Found {} potential vulnerable organizations: {}".format(len(orgs_in_code_search), orgs_in_code_search))
+        print("The lines are: {}".format(lines))
+        # query_organizations(endpoint, db, owner, name, db_info, gh_info, unpatched_orgs_forks, wait_for_ratelimiter, REST_header)
